@@ -10,6 +10,9 @@ import { CorrectionDiff } from './CorrectionDiff'
 interface ClaimDetailProps {
   claim: RankedClaim
   resolution?: Resolution
+  /** The user's edited draft for this claim, if they have changed it this session. */
+  draft?: string
+  onDraftChange: (claimId: string, next: string) => void
   onBack: () => void
   onResolve: (claimId: string, resolution: Resolution) => void
 }
@@ -73,7 +76,14 @@ function ElementList({
   )
 }
 
-export function ClaimDetail({ claim, resolution, onBack, onResolve }: ClaimDetailProps) {
+export function ClaimDetail({
+  claim,
+  resolution,
+  draft,
+  onDraftChange,
+  onBack,
+  onResolve,
+}: ClaimDetailProps) {
   const [draftOpen, setDraftOpen] = useState(false)
   const [addendumRequested, setAddendumRequested] = useState(false)
   const [assignedToMe, setAssignedToMe] = useState(false)
@@ -81,6 +91,11 @@ export function ClaimDetail({ claim, resolution, onBack, onResolve }: ClaimDetai
   const { record, classification, appeal_deadline, days_until_deadline } = claim
   const confidence = CONFIDENCE_META[classification.confidence]
   const policy = getPayerPolicy(record.payer_id)
+
+  // What the system wrote, versus what is on screen now. The edit lives in App so it
+  // outlives this component's remount; reverting drops back to the generated text.
+  const generatedDraft = classification.drafted_appeal ?? ''
+  const draftText = draft ?? generatedDraft
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -276,11 +291,17 @@ export function ClaimDetail({ claim, resolution, onBack, onResolve }: ClaimDetai
                   </div>
                   {!draftOpen && (
                     <p className="mt-3 text-sm text-muted">
-                      Read the draft before submitting — nothing is sent until you do.
+                      Review the draft before submitting — you can edit it in place.
+                      Nothing is sent until you do.
                     </p>
                   )}
                   {draftOpen && classification.drafted_appeal && (
-                    <AppealDraft draft={classification.drafted_appeal} />
+                    <AppealDraft
+                      draft={draftText}
+                      onChange={(next) => onDraftChange(record.claim_id, next)}
+                      edited={draftText !== generatedDraft}
+                      onRevert={() => onDraftChange(record.claim_id, generatedDraft)}
+                    />
                   )}
                 </>
               )}

@@ -47,7 +47,11 @@ npm run build     # typecheck + production build
    rationale line under each one is doing work no denial code could.
 2. **`CLM-88214` — the confident yes.** Open it. The reasoning comes before anything else
    on the page. All four medical-necessity criteria check green. Click *View drafted
-   appeal* — then note that the submit button was disabled until the draft was opened.
+   appeal* — the narrative is editable in place, and the header marks it *edited by you*
+   with a one-click revert as soon as you type, so the system's version and yours never
+   blur together. Edits settle to *Auto-saved* and survive returning to the queue and
+   reopening the claim; a reload still resets the demo. Then note that the submit button
+   was disabled until the draft was opened.
 3. **`CLM-88215` — the unsure case.** This is the one to spend time on. Low confidence,
    amber, visually separated, second in the queue. No draft was written. The panel says
    what a human needs to check and why the system stopped.
@@ -136,3 +140,6 @@ Real product concerns, cut for a prototype:
 - Repeat-denial and re-denial handling
 - A real maintenance model for the payer policy table
 - Live LLM classification — the classifier outputs here are fixed mock data
+- A record of what was actually submitted — the draft is editable, so the model's version
+  and the biller's can differ, and nothing here captures which one went. Real appeals are
+  filed documents; in a product that record is a requirement, not a nicety

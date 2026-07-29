@@ -141,3 +141,11 @@ export interface RankedClaim {
 export type Resolution = 'submitted' | 'written_off'
 
 export type ResolutionMap = Record<string, Resolution>
+
+/**
+ * Appeal drafts the user has edited this session, keyed by claim id. Held above the
+ * claim detail screen so an edit survives navigating back to the queue and reopening —
+ * otherwise the "auto-saved" affordance would promise something the app doesn't do.
+ * Still in-memory: a reload resets it, like everything else here.
+ */
+export type DraftMap = Record<string, string>

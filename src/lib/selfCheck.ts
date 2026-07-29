@@ -34,7 +34,7 @@ export function runSelfCheck(): void {
   )
 
   check(
-    'all four seed claims match on patient_control_number',
+    'every seed claim matches on patient_control_number',
     joined.every((r) => r.match_status === 'matched' && r.match_key === 'patient_control_number'),
     joined.map((r) => `${r.claim_id}:${r.match_status}`).join(', '),
   )
@@ -161,8 +161,23 @@ export function runSelfCheck(): void {
 
   check(
     'ranking covers every classified claim',
-    ranked.length === 4,
-    `got ${ranked.length}`,
+    ranked.length === mockPmsRecords.length,
+    `expected ${mockPmsRecords.length}, got ${ranked.length}`,
+  )
+
+  check(
+    'exactly three claims share CARC 50 — the demo rests on it being three',
+    joined.filter((r) => r.carc_code === '50').length === 3,
+    `${joined.filter((r) => r.carc_code === '50').length} CARC 50 claims`,
+  )
+
+  check(
+    'every claim resolves to a payer policy, so no deadline is silently absent',
+    ranked.every((c) => c.appeal_deadline !== null),
+    ranked
+      .filter((c) => c.appeal_deadline === null)
+      .map((c) => c.record.claim_id)
+      .join(', ') || 'all covered',
   )
 
   check(

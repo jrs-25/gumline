@@ -1,9 +1,5 @@
 import type { ClassificationResult } from '../types'
-
-const SOURCE_LABEL: Record<string, string> = {
-  provider_roster: 'provider roster',
-  payer_policy_table: 'payer policy table',
-}
+import { SOURCE_LABEL } from '../lib/actionMeta'
 
 /**
  * The exact field-level change the system proposes, shown before it is applied.

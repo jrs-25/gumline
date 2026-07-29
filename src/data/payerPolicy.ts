@@ -37,6 +37,22 @@ export const payerPolicies: PayerPolicy[] = [
     policy_note:
       'Corrected claims accepted within 180 days of original remittance; no formal appeal required.',
   },
+  {
+    payer_id: 'PAYER-CRESTVIEW-03',
+    payer_name: 'Crestview Dental Plan',
+    appeal_window_days: 45,
+    deadline_type: 'appeal',
+    policy_note:
+      'Appeals must be filed within 45 days of remittance advice date. No second-level review.',
+  },
+  {
+    payer_id: 'PAYER-NORTHSTAR-04',
+    payer_name: 'Northstar Dental Benefits',
+    appeal_window_days: 120,
+    deadline_type: 'appeal',
+    policy_note:
+      'First-level appeal accepted within 120 days of remittance advice date.',
+  },
 ]
 
 export const DEADLINE_LABEL: Record<PayerPolicy['deadline_type'], string> = {

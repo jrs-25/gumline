@@ -115,10 +115,10 @@ not a degraded version of a verdict.
 | --- | --- |
 | Join logic | **Real** — two passes, ambiguity handling, provenance, 19 dev assertions |
 | Prioritization and deadline math | **Real** — deterministic, fully inspectable |
-| Payer policy table | **Real but tiny** — two payers, hand-authored |
+| Payer policy table | **Real but tiny** — four payers, hand-authored, windows from 45 to 180 days |
 | Denial classification | **Mocked** — fixed `ClassificationResult` per claim. The shape is the real contract; the values would come from a model reading the chart note |
 | Appeal draft generation | **Mocked** — one static narrative. Editing it is real |
-| Both source feeds | **Mocked** — local TypeScript modules |
+| Both source feeds | **Mocked** — local TypeScript modules, ten claims |
 
 ## What never happens
 

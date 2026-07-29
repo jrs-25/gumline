@@ -4,6 +4,7 @@ import { mockPmsRecords } from './data/mockPmsRecords'
 import { mock835Records } from './data/mock835Records'
 import { joinFeeds } from './lib/joinFeeds'
 import { prioritize } from './lib/prioritize'
+import { DEFAULT_SORT, type SortMode } from './lib/sortModes'
 import { AppHeader } from './components/AppHeader'
 import { TriageQueue } from './components/TriageQueue'
 import { ClaimDetail } from './components/ClaimDetail'
@@ -22,6 +23,9 @@ export default function App() {
   // remounts on every open. Transient screen state (is the draft panel open, has an
   // addendum been requested) should reset on reopen; the user's written words should not.
   const [drafts, setDrafts] = useState<DraftMap>({})
+  // Held here for the same reason as drafts: TriageQueue unmounts whenever a claim is
+  // opened, so a locally-held sort would silently reset every time the user came back.
+  const [sortMode, setSortMode] = useState<SortMode>(DEFAULT_SORT)
 
   const selected = claims.find((c) => c.record.claim_id === selectedClaimId) ?? null
 
@@ -51,6 +55,8 @@ export default function App() {
         <TriageQueue
           claims={claims}
           resolutions={resolutions}
+          sortMode={sortMode}
+          onSortChange={setSortMode}
           onOpen={setSelectedClaimId}
         />
       )}

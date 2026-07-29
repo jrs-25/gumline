@@ -39,7 +39,13 @@ Each is deliberate and traceable to a Linear issue.
 - **Dates are measured against a pinned `DEMO_TODAY`,** not the real clock, so the
   deadline-override story does not decay as the real date moves past the seed data.
 
-The four seed claims themselves conform to the spec exactly — 67 fields checked, zero
+- **The dataset is ten claims, not four.** The spec seeds four and says "use these exact
+  values." Those four are unchanged and still conform field for field; six were appended
+  under GUM-48 so the queue reads as a real workload rather than a diagram. The additions
+  deliberately avoid CARC 50 and the Delta/D4341 combination, because the spec's central
+  argument is that *three* claims share that denial code.
+
+The original four seed claims conform to the spec exactly — 67 fields checked, zero
 divergent. See GUM-40.
 
 ## Everything else

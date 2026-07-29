@@ -1,11 +1,13 @@
 import type {
   ClaimAction,
+  ClassificationResult,
   DocumentationMatch,
   MatchedDenialRecord,
   RankedClaim,
 } from '../types'
 import { getClassification } from '../data/mockClassifications'
 import { DEADLINE_LABEL, getPayerPolicy } from '../data/payerPolicy'
+import { SOURCE_LABEL } from './actionMeta'
 import { addDays, daysFromDemoToday, DEADLINE_OVERRIDE_DAYS, formatCurrency } from './dates'
 
 /**
@@ -34,6 +36,15 @@ function docWeight(match: DocumentationMatch): number {
   return DOC_STRENGTH_WEIGHT[match ?? 'administrative'] ?? 0.5
 }
 
+/**
+ * Billed amount discounted by documentation strength — what this queue means by
+ * "recoverable value". Exported so the manual sort control uses the same definition the
+ * ranking does; two notions of "value" in one screen would be a quiet lie.
+ */
+export function recoverableValue(claim: RankedClaim): number {
+  return claim.record.billed_amount * docWeight(claim.classification.documentation_match)
+}
+
 function docPhrase(match: DocumentationMatch): string {
   switch (match) {
     case 'strong':
@@ -49,16 +60,21 @@ function docPhrase(match: DocumentationMatch): string {
   }
 }
 
-function actionPhrase(action: ClaimAction): string {
-  switch (action) {
+function actionPhrase(classification: ClassificationResult): string {
+  switch (classification.action) {
     case 'proceed_to_drafting':
       return 'draft prepared'
     case 'route_to_human_review':
       return 'needs human judgment before drafting'
     case 'recommend_writeoff_or_addendum':
       return 'no appealable evidence in chart'
-    case 'approve_correction':
-      return 'corrected value ready from provider roster'
+    case 'approve_correction': {
+      // Name the actual system of record. Two correction claims can draw on different
+      // ones, and asserting the wrong source is the kind of small lie that costs trust.
+      const source = classification.source_of_truth
+      const label = source ? (SOURCE_LABEL[source] ?? source) : 'a system of record'
+      return `corrected value ready from ${label}`
+    }
   }
 }
 
@@ -116,7 +132,7 @@ export function prioritize(records: MatchedDenialRecord[]): RankedClaim[] {
     const clauses = [
       docPhrase(classification.documentation_match),
       stakesClause,
-      actionPhrase(classification.action),
+      actionPhrase(classification),
     ].filter((clause): clause is string => Boolean(clause))
 
     return [
@@ -138,8 +154,6 @@ export function prioritize(records: MatchedDenialRecord[]): RankedClaim[] {
     }
     // Inside the override group the nearest deadline still doesn't win — the point of
     // the override is that they're all urgent, so value and strength break the tie.
-    const scoreA = a.record.billed_amount * docWeight(a.classification.documentation_match)
-    const scoreB = b.record.billed_amount * docWeight(b.classification.documentation_match)
-    return scoreB - scoreA
+    return recoverableValue(b) - recoverableValue(a)
   })
 }

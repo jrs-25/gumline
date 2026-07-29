@@ -13,9 +13,11 @@ export function ClaimRow({ claim, resolution, onOpen }: ClaimRowProps) {
   const { record, classification, rationale, deadline_override } = claim
   const meta = ACTION_META[classification.action]
 
-  // The low-confidence claim gets a heavier border and a tinted field. The whole point
-  // of the demo is that "the system isn't sure" is a first-class outcome, so it must not
-  // look like a lesser version of the confident rows.
+  // Every row carries its action's colour, so the queue reads as one system. The
+  // low-confidence claim then leads on a tinted field rather than on an odd asymmetric
+  // edge — the whole point of the demo is that "the system isn't sure" is a first-class
+  // outcome, so it must not look like a lesser version of the confident rows, but it
+  // must not look like a rendering fault either.
   const emphasised = meta.emphasise && !resolution
 
   return (
@@ -23,16 +25,19 @@ export function ClaimRow({ claim, resolution, onOpen }: ClaimRowProps) {
       type="button"
       onClick={() => onOpen(record.claim_id)}
       className={`group block w-full rounded-xl border bg-white px-6 py-5 text-left shadow-sm transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 ${
-        emphasised ? 'border-l-4 border-amber bg-amber-tint/30' : 'border-hairline'
-      } ${resolution ? 'opacity-60' : ''}`}
+        resolution ? 'border-hairline opacity-60' : meta.rowBorderClass
+      } ${emphasised ? 'bg-amber-tint/30' : ''}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="font-mono text-lg font-semibold text-ink">{record.claim_id}</span>
             <span className="text-sm text-muted">{classification.category}</span>
+            {/* Deliberately neutral, not amber. Amber means exactly one thing in this
+                UI — a person needs to decide — and spending it on urgency too would put
+                two competing amber chips in the one row that carries that argument. */}
             {deadline_override && !resolution && (
-              <span className="rounded-md bg-amber-tint px-2 py-0.5 text-xs font-semibold uppercase text-[#8f5a12]">
+              <span className="rounded-md border border-[#d5dbdc] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-muted">
                 Deadline
               </span>
             )}

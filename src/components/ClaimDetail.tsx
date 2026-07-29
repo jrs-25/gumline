@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { RankedClaim, Resolution } from '../types'
-import { CONFIDENCE_META } from '../lib/actionMeta'
+import { ACTION_META, CONFIDENCE_META } from '../lib/actionMeta'
 import { getPayerPolicy } from '../data/payerPolicy'
 import { formatCurrency, formatDate } from '../lib/dates'
 import { ResolutionBadge, StatusBadge } from './StatusBadge'
@@ -108,8 +108,11 @@ export function ClaimDetail({
       </button>
 
       {/* Header */}
+      {/* min-w-0 flex-1 keeps the badge anchored top-right. Without it the long
+          procedure description pushes this block to full width and the badge wraps
+          onto its own line, orphaned bottom-left. */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-mono text-3xl font-semibold tracking-tight text-ink">
               {record.claim_id}
@@ -257,7 +260,10 @@ export function ClaimDetail({
         </Section>
 
         {/* What happens next — and nothing happens without a click. */}
-        <Section title="Recommended next step" className="border-l-4 border-l-teal">
+        <Section
+          title="Recommended next step"
+          className={`border-l-4 ${ACTION_META[classification.action].accentClass}`}
+        >
           <p className="text-lg leading-relaxed text-ink">
             {classification.recommended_next_step}
           </p>

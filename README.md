@@ -22,6 +22,14 @@ note attached to each and reaches three different conclusions:
 Plus `CLM-88301`, an Administrative denial (CARC 16 / RARC N264) with a deterministic
 correction path — a missing NPI that the provider roster can supply.
 
+Those four are the argument. Six more claims sit around them so the queue looks like a
+real morning's work rather than a diagram: ten denials, four payers, filing windows from
+three days to four months, and every denial category the classifier knows about. The one
+worth a second look is `CLM-88342` — a crown denied because the supporting radiographs
+were never attached, even though they were taken on the day and are sitting in the chart.
+Nothing clinical is wrong with it. It is the cheapest money in the queue and the closest
+to expiring.
+
 **The argument: the right amount of human oversight depends on the claim, and the system
 should show its reasoning rather than hide it behind a score.** The low-confidence claim
 is not a failure state — it is the system correctly declining to be certain, and it is
@@ -43,8 +51,11 @@ npm run build     # typecheck + production build
 
 ## Demo script
 
-1. **Open the queue.** Four denials, ranked. Point out that three share CARC 50 — the
-   rationale line under each one is doing work no denial code could.
+1. **Open the queue.** Ten denials, ranked, across three denial categories and four
+   payers. Point out that three of them share CARC 50 — and that they land at positions
+   two, three, and last. The rationale line under each one is doing work no denial code
+   could. The *Sort by* control at the top right can override the ranking; the default is
+   the system's own recommendation, and one click returns to it.
 2. **`CLM-88214` — the confident yes.** Open it. The reasoning comes before anything else
    on the page. All four medical-necessity criteria check green. Click *View drafted
    appeal* — the narrative is editable in place, and the header marks it *edited by you*
@@ -123,8 +134,22 @@ opaque priority number would sort the list correctly and tell the biller nothing
 Current ranking with the seed data:
 
 ```
-CLM-88214 (draft appeal) → CLM-88215 (human review) → CLM-88301 (correction) → CLM-88213 (write-off)
+CLM-88342  Documentation · draft prepared      3 days   $1,340
+CLM-88214  Clinical strong · draft prepared    11 days  $310
+CLM-88215  Clinical ambiguous · human review   12 days  $298
+CLM-88356  Clinical strong · draft prepared    32 days  $1,875
+CLM-88301  Administrative · correction                  $1,150
+CLM-88391  Documentation · human review                 $425
+CLM-88361  Clinical ambiguous · human review            $265
+CLM-88374  Administrative · correction                  $128
+CLM-88380  Clinical weak · write-off                    $340
+CLM-88213  Clinical weak · write-off                    $285
 ```
+
+Note the top two rows. A $1,340 claim with three days left outranks the $1,875 claim at
+row four, because only one of them is running out of time — and `CLM-88213` sits last on
+the same denial code as `CLM-88214` at row two, because weak documentation on a small
+balance is the least of anyone's problems.
 
 ### Dates
 

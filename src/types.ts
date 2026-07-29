@@ -23,6 +23,14 @@ export interface PmsRecord {
 export interface Era835Record {
   /** Echoed back by the payer; the primary join key. */
   patient_control_number: string
+
+  // Service-line detail. A real 835 carries these — procedure code on the SVC
+  // segment, service date on DTM, patient identity on NM1 — which is what makes
+  // a fallback join possible at all when the control number doesn't survive.
+  patient_id: string
+  date_of_service: string
+  procedure_code: string
+
   payer_claim_control_number: string
   payer_id: string
   carc_code: string

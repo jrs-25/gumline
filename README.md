@@ -36,7 +36,7 @@ npm run dev
 ```
 
 In dev, a set of assertions covering the join and the deadline override runs on load and
-logs to the browser console (`gumline self-check — 14/14 passed`).
+logs to the browser console (`gumline self-check — 19/19 passed`).
 
 ```bash
 npm run build     # typecheck + production build
@@ -89,6 +89,16 @@ truncated, re-keyed, and dropped — the join falls back to `patient_id + date_o
 procedure_code` and marks the result `fallback_matched`. A fallback match is an assumption,
 so it is flagged in the UI rather than passed off as clean. Records that match nothing stay
 in the result set as `unmatched` instead of disappearing.
+
+The fallback runs as a **second pass**, after every control-number match is settled, so the
+result never depends on the order the feeds arrive in. It matches **one-to-one or not at
+all**: D4341 is billed per quadrant, so patient + date + procedure is not a unique key in
+dentistry, and where two records collide the join reports no match rather than picking one.
+A wrong match that looks clean is worse than an honest gap.
+
+Remittances that match no PMS record come back separately as `unmatchedRemittances` rather
+than in the claim list — there is no chart note or patient to render, so they aren't claims,
+but they aren't dropped either.
 
 ### The ranking
 

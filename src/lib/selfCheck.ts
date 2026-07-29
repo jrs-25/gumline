@@ -19,12 +19,18 @@ export function runSelfCheck(): void {
   }
 
   // ── Join: the happy path ──────────────────────────────────────────────────
-  const joined = joinFeeds(mockPmsRecords, mock835Records)
+  const { claims: joined, unmatchedRemittances } = joinFeeds(mockPmsRecords, mock835Records)
 
   check(
     'join returns one row per PMS record',
     joined.length === mockPmsRecords.length,
     `expected ${mockPmsRecords.length}, got ${joined.length}`,
+  )
+
+  check(
+    'every remittance is claimed when the feeds line up',
+    unmatchedRemittances.length === 0,
+    `${unmatchedRemittances.length} orphaned remittance(s)`,
   )
 
   check(
@@ -56,7 +62,7 @@ export function runSelfCheck(): void {
   const eraNoControlNumber: Era835Record[] = [
     { ...mock835Records[0], patient_control_number: '' },
   ]
-  const fallbackJoined = joinFeeds(pmsOrphan, eraNoControlNumber)
+  const fallbackJoined = joinFeeds(pmsOrphan, eraNoControlNumber).claims
   check(
     'falls back to patient_id + DOS + procedure when the control number is gone',
     fallbackJoined[0]?.match_status === 'fallback_matched' &&
@@ -69,8 +75,62 @@ export function runSelfCheck(): void {
     `carc_code = ${fallbackJoined[0]?.carc_code}`,
   )
 
-  // ── Join: unmatched records survive ───────────────────────────────────────
-  const unmatchedJoined = joinFeeds([mockPmsRecords[0]], [])
+  // ── Join: the fallback does not cross-match ───────────────────────────────
+  // The regression this fixture exists for: an earlier implementation never
+  // compared the candidate's natural key at all, so a control-number-less
+  // remittance landed on whichever PMS record the scan reached first. Here that
+  // put Meridian's crown denial onto a perio claim for a different patient.
+  const crossMatchPms = [mockPmsRecords[0], mockPmsRecords[3]] // PT-4471/D4341, PT-4480/D2740
+  const crossMatchEra = [{ ...mock835Records[3], patient_control_number: '' }] // PT-4480's
+  const crossMatched = joinFeeds(crossMatchPms, crossMatchEra).claims
+  const wrongPatient = crossMatched.find((r) => r.claim_id === 'CLM-88213')
+  const rightPatient = crossMatched.find((r) => r.claim_id === 'CLM-88301')
+  check(
+    "a control-number-less remittance never lands on another patient's claim",
+    wrongPatient?.match_status === 'unmatched' &&
+      wrongPatient?.carc_code === null &&
+      rightPatient?.match_status === 'fallback_matched' &&
+      rightPatient?.carc_code === '16',
+    `CLM-88213 → ${wrongPatient?.match_status}/${wrongPatient?.carc_code}, ` +
+      `CLM-88301 → ${rightPatient?.match_status}/${rightPatient?.carc_code}`,
+  )
+
+  // ── Join: genuine ambiguity is refused, not guessed ───────────────────────
+  // D4341 bills per quadrant, so one patient can hold two identical lines on one
+  // date. The natural key cannot separate them and the join must not pretend it can.
+  const ambiguousPms: PmsRecord[] = [
+    { ...mockPmsRecords[1], patient_control_number: 'PMS-90001' },
+    { ...mockPmsRecords[1], patient_control_number: 'PMS-90002' },
+  ]
+  const ambiguousJoin = joinFeeds(ambiguousPms, [
+    { ...mock835Records[1], patient_control_number: '' },
+  ])
+  check(
+    'two claims sharing a natural key are left unmatched rather than guessed between',
+    ambiguousJoin.claims.every((r) => r.match_status === 'unmatched') &&
+      ambiguousJoin.unmatchedRemittances.length === 1,
+    `statuses ${ambiguousJoin.claims.map((r) => r.match_status).join(', ')}, ` +
+      `${ambiguousJoin.unmatchedRemittances.length} remittance held back`,
+  )
+
+  // ── Join: a remittance is never handed out twice ──────────────────────────
+  // One remittance, two PMS records: the first owns it by control number, the
+  // second shares its natural key. Pass 2 must not re-issue what pass 1 took.
+  const doubleClaimPms: PmsRecord[] = [
+    mockPmsRecords[1], // PMS-88214 — matches on control number
+    { ...mockPmsRecords[1], patient_control_number: 'PMS-90003' }, // same natural key
+  ]
+  const doubleClaimed = joinFeeds(doubleClaimPms, [mock835Records[1]]).claims
+  check(
+    'a remittance claimed on control number is not re-used by the fallback pass',
+    doubleClaimed.filter((r) => r.match_status !== 'unmatched').length === 1 &&
+      doubleClaimed[0].match_status === 'matched' &&
+      doubleClaimed[1].match_status === 'unmatched',
+    doubleClaimed.map((r) => `${r.claim_id}:${r.match_status}`).join(', '),
+  )
+
+  // ── Join: unmatched records survive on both sides ─────────────────────────
+  const unmatchedJoined = joinFeeds([mockPmsRecords[0]], []).claims
   check(
     'a PMS record with no remittance is kept, not dropped',
     unmatchedJoined.length === 1 &&
@@ -78,6 +138,21 @@ export function runSelfCheck(): void {
       unmatchedJoined[0].match_key === null &&
       unmatchedJoined[0].carc_code === null,
     `length ${unmatchedJoined.length}, status ${unmatchedJoined[0]?.match_status}`,
+  )
+
+  // A remittance for a claim the practice has no record of. It cannot be rendered
+  // as a claim, but it must not vanish either — it comes back on its own channel.
+  const strandedJoin = joinFeeds(
+    [mockPmsRecords[0]],
+    [{ ...mock835Records[0], patient_control_number: '', patient_id: 'PT-0000' }],
+  )
+  check(
+    'a remittance matching nothing is reported separately, not attached',
+    strandedJoin.claims[0]?.match_status === 'unmatched' &&
+      strandedJoin.claims[0]?.carc_code === null &&
+      strandedJoin.unmatchedRemittances.length === 1,
+    `claim ${strandedJoin.claims[0]?.match_status}, ` +
+      `${strandedJoin.unmatchedRemittances.length} remittance reported`,
   )
 
   // ── Prioritization: the deadline override ─────────────────────────────────

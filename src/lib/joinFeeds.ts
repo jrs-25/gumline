@@ -1,12 +1,56 @@
-import type { Era835Record, MatchedDenialRecord, PmsRecord } from '../types'
+import type {
+  Era835Record,
+  MatchedDenialRecord,
+  MatchKey,
+  MatchStatus,
+  PmsRecord,
+} from '../types'
 
 /** PMS-88213 → CLM-88213. Stable, derived, no separate ID feed to keep in sync. */
 function toClaimId(patientControlNumber: string): string {
   return patientControlNumber.replace(/^PMS-/, 'CLM-')
 }
 
-function fallbackKey(patientId: string, dos: string, procedureCode: string): string {
-  return `${patientId}|${dos}|${procedureCode}`
+/**
+ * The natural key — patient, date of service, procedure code. Both feeds can
+ * rebuild it independently, which is the whole reason it works as a fallback.
+ */
+function naturalKey(record: {
+  patient_id: string
+  date_of_service: string
+  procedure_code: string
+}): string {
+  return `${record.patient_id}|${record.date_of_service}|${record.procedure_code}`
+}
+
+function groupBy<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = keyOf(item)
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(item)
+    else groups.set(key, [item])
+  }
+  return groups
+}
+
+interface Assignment {
+  era: Era835Record
+  status: MatchStatus
+  key: MatchKey
+}
+
+export interface JoinResult {
+  /** One per PMS record, in feed order. The triage queue is built from these. */
+  claims: MatchedDenialRecord[]
+  /**
+   * Remittances that found no home. These deliberately do not appear in `claims`:
+   * without a PMS record there is no chart note, no patient, and no billed amount,
+   * so there is nothing to render and nothing to triage. Returning them separately
+   * keeps `MatchedDenialRecord` honest — every field on it is genuinely present —
+   * while still refusing to drop payer data on the floor.
+   */
+  unmatchedRemittances: Era835Record[]
 }
 
 /**
@@ -18,59 +62,76 @@ function fallbackKey(patientId: string, dos: string, procedureCode: string): str
  * patient + date of service + procedure code. Fallback matches are flagged rather than
  * silently treated as clean, because a fallback match is an assumption, not a fact.
  *
- * The PMS feed is the spine: you cannot triage a denial you have no clinical record
- * for. PMS records with no remittance stay in the result set marked `unmatched` rather
- * than being dropped, so a missing remittance is visible instead of invisible.
+ * Two passes rather than one, so the result never depends on feed order: every
+ * control-number match is settled before the fallback looks at what is left over. A
+ * single pass lets whichever PMS record happens to come first claim a remittance that
+ * a later record would have matched exactly.
  */
 export function joinFeeds(
   pmsRecords: PmsRecord[],
   era835Records: Era835Record[],
-): MatchedDenialRecord[] {
-  const byControlNumber = new Map<string, Era835Record>()
-  for (const era of era835Records) {
-    if (era.patient_control_number) {
-      byControlNumber.set(era.patient_control_number, era)
-    }
-  }
+): JoinResult {
+  const assignments = new Map<PmsRecord, Assignment>()
+  const claimed = new Set<Era835Record>()
 
-  // The 835 carries no patient_id or procedure code, so the fallback key has to be
-  // rebuilt from whichever PMS record claims the same control number lineage. In a
-  // real implementation this comes off the 837 the practice originally submitted;
-  // here we index the PMS side and probe it from the remittance.
-  const pmsByFallbackKey = new Map<string, PmsRecord>()
+  // ── Pass 1 — the control number the payer echoed back ─────────────────────
+  const eraByControlNumber = groupBy(
+    era835Records.filter((era) => era.patient_control_number),
+    (era) => era.patient_control_number,
+  )
+
   for (const pms of pmsRecords) {
-    pmsByFallbackKey.set(
-      fallbackKey(pms.patient_id, pms.date_of_service, pms.procedure_code),
-      pms,
-    )
+    const candidates = eraByControlNumber.get(pms.patient_control_number) ?? []
+    // Two remittances on one control number is something we can't interpret, so
+    // don't: fall through and let the natural key try instead.
+    if (candidates.length !== 1 || claimed.has(candidates[0])) continue
+    assignments.set(pms, {
+      era: candidates[0],
+      status: 'matched',
+      key: 'patient_control_number',
+    })
+    claimed.add(candidates[0])
   }
 
-  const consumed = new Set<Era835Record>()
+  // ── Pass 2 — the natural key, over what neither side has claimed ──────────
+  const pmsByNaturalKey = groupBy(
+    pmsRecords.filter((pms) => !assignments.has(pms)),
+    naturalKey,
+  )
+  const eraByNaturalKey = groupBy(
+    era835Records.filter((era) => !claimed.has(era)),
+    naturalKey,
+  )
 
-  return pmsRecords.map((pms) => {
-    let era: Era835Record | undefined = byControlNumber.get(pms.patient_control_number)
-    let matchStatus: MatchedDenialRecord['match_status'] = 'matched'
-    let matchKey: MatchedDenialRecord['match_key'] = 'patient_control_number'
+  for (const [key, pmsGroup] of pmsByNaturalKey) {
+    const eraGroup = eraByNaturalKey.get(key) ?? []
+    // One-to-one or nothing. D4341 is billed per quadrant, so patient + date +
+    // procedure is not a unique key in dentistry — one patient can carry two
+    // identical lines on one date. Picking between them would attach a payer's
+    // denial to an arbitrary claim, and a wrong match that looks clean is worse
+    // than no match at all.
+    if (pmsGroup.length !== 1 || eraGroup.length !== 1) continue
+    assignments.set(pmsGroup[0], {
+      era: eraGroup[0],
+      status: 'fallback_matched',
+      key: 'patient_id+dos+procedure',
+    })
+    claimed.add(eraGroup[0])
+  }
 
-    if (!era) {
-      // No control-number hit — try the natural key against remittances nobody claimed.
-      era = era835Records.find((candidate) => {
-        if (consumed.has(candidate)) return false
-        const viaFallback = pmsByFallbackKey.get(
-          fallbackKey(pms.patient_id, pms.date_of_service, pms.procedure_code),
-        )
-        return viaFallback === pms && !byControlNumber.has(candidate.patient_control_number)
-      })
-      matchStatus = era ? 'fallback_matched' : 'unmatched'
-      matchKey = era ? 'patient_id+dos+procedure' : null
-    }
-
-    if (era) consumed.add(era)
+  // ── Flatten ───────────────────────────────────────────────────────────────
+  // The PMS feed is the spine: you cannot triage a denial you have no clinical
+  // record for. PMS records with no remittance stay in the result marked
+  // `unmatched` rather than being dropped, so a missing remittance is visible
+  // instead of invisible.
+  const claims = pmsRecords.map((pms): MatchedDenialRecord => {
+    const assignment = assignments.get(pms)
+    const era = assignment?.era
 
     return {
       claim_id: toClaimId(pms.patient_control_number),
-      match_status: matchStatus,
-      match_key: matchKey,
+      match_status: assignment?.status ?? 'unmatched',
+      match_key: assignment?.key ?? null,
 
       patient_control_number: pms.patient_control_number,
       patient_id: pms.patient_id,
@@ -93,4 +154,9 @@ export function joinFeeds(
       remittance_date: era?.remittance_date ?? null,
     }
   })
+
+  return {
+    claims,
+    unmatchedRemittances: era835Records.filter((era) => !claimed.has(era)),
+  }
 }

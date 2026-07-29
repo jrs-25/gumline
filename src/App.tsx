@@ -11,7 +11,10 @@ import { ClaimDetail } from './components/ClaimDetail'
 export default function App() {
   // The feeds are static, so the join and the ranking run once. Resolutions are the only
   // thing that changes, and they live in React state — nothing is persisted anywhere.
-  const claims = useMemo(() => prioritize(joinFeeds(mockPmsRecords, mock835Records)), [])
+  const claims = useMemo(
+    () => prioritize(joinFeeds(mockPmsRecords, mock835Records).claims),
+    [],
+  )
 
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null)
   const [resolutions, setResolutions] = useState<ResolutionMap>({})

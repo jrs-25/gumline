@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+
+/* gumline palette — mirrors the deck's system so prototype and slides read as one product. */
+@theme {
+  --color-teal: #028090;
+  --color-seafoam: #00a896;
+  --color-mint: #02c39a;
+  --color-amber: #c9822b;
+  --color-ink: #212121;
+  --color-muted: #6b6f72;
+  --color-deep: #022e33;
+
+  /* Tints derived from the core palette, for badge and card fills. */
+  --color-teal-tint: #e6f2f4;
+  --color-mint-tint: #e4f7f1;
+  --color-amber-tint: #faf0e2;
+  --color-shell: #f7f9f9;
+  --color-hairline: #e2e8e9;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+html {
+  background-color: var(--color-shell);
+}
+
+body {
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

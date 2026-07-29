@@ -1,7 +1,6 @@
 # gumline
 
-An AI-assisted **denial triage queue** for dental insurance billing — a prototype built
-for a Principal PM case study.
+A prototype AI-assisted **denial triage queue** for dental insurance billing.
 
 It demonstrates one interaction: a biller sees denied claims ranked and classified, with
 the system's reasoning visible on every one, and takes a different action depending on how

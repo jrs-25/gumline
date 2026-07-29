@@ -69,6 +69,9 @@ principle, not a prototype shortcut.
 No backend, no database, no persistence, no auth, no network calls. Two mock feeds get
 joined and ranked in the browser; state lives in React and resets on reload.
 
+For the full picture — data flow diagram, stage-by-stage inputs and outputs, and what is
+real versus mocked — see [`docs/system-diagram.md`](docs/system-diagram.md).
+
 ```
 src/
   data/

@@ -43,7 +43,7 @@ npm run dev
 ```
 
 In dev, a set of assertions covering the join and the deadline override runs on load and
-logs to the browser console (`gumline self-check — 19/19 passed`).
+logs to the browser console (`gumline self-check — 21/21 passed`).
 
 ```bash
 npm run build     # typecheck + production build
@@ -64,13 +64,13 @@ npm run build     # typecheck + production build
    reopening the claim; a reload still resets the demo. Then note that the submit button
    was disabled until the draft was opened.
 3. **`CLM-88215` — the unsure case.** This is the one to spend time on. Low confidence,
-   amber, visually separated, second in the queue. No draft was written. The panel says
-   what a human needs to check and why the system stopped.
+   amber, third in the queue — near the top, not buried. No draft was written at all. The
+   panel says what a human needs to check and why the system stopped.
 4. **`CLM-88301` — the correction.** The proposed field change is shown as a before/after
    diff with its source of truth. *Approve & resubmit* moves it out of the actionable
    queue into "Submitted — awaiting payer response."
-5. **`CLM-88213` — the write-off.** Same denial code as step 2, opposite conclusion, and
-   the reasoning says exactly why.
+5. **`CLM-88213` — the write-off.** Scroll to the bottom of the queue. Same denial code as
+   step 2, opposite conclusion, and eight rows apart — the reasoning says exactly why.
 
 Nothing in the app submits anything without an explicit click. That is a product
 principle, not a prototype shortcut.

@@ -23,6 +23,9 @@ flowchart TD
     POL["<b>payerPolicies</b><br/>filing windows per payer"]
     TODAY["<b>DEMO_TODAY</b><br/>pinned 2026-09-06"]
 
+    OUT["<b>Feed 3 · historical outcomes</b><br/>ClaimOutcomeRecord[]<br/>what the payer did after<br/>the practice filed"]
+    SUM["<b>summarize()</b><br/>overturned / resolved<br/>null when nothing has<br/>come back yet"]
+
     PRIO["<b>prioritize()</b><br/>1 · deadline override, hard<br/>2 · billed × documentation strength"]
 
     RANKED["<b>RankedClaim[]</b><br/>+ rationale, deadline,<br/>days remaining, override flag"]
@@ -45,7 +48,14 @@ flowchart TD
     QUEUE --> DETAIL
     DETAIL --> STATE
     STATE --> QUEUE
+
+    OUT --> SUM
+    SUM -.->|not yet wired| PRIO
 ```
+
+The dashed edge is the point: the outcomes feed exists and aggregates, but nothing it
+produces reaches the ranking yet. Adding a payer track record term to `prioritize()` is
+separate work, and the feed had to land first for there to be anything to learn from.
 
 ## Stage by stage
 
@@ -96,6 +106,42 @@ opaque priority number would sort the list correctly and tell the biller nothing
 > A claim with no matching classification is dropped from the ranking entirely. With the
 > seed data every claim has one, so this never fires in the demo.
 
+### `summarize(outcomes)`
+
+| | |
+| --- | --- |
+| **In** | `ClaimOutcomeRecord[]`, optionally narrowed by `byPayer` / `byCategory` / `byCarc` |
+| **Out** | Counts plus `overturn_rate`, or `null` when nothing has come back yet |
+
+Outcomes do not return on one clean feed, and the record shape is built around that. A
+corrected claim resubmission is re-adjudicated and comes back on an 835 — the same channel
+as the original denial. A formal appeal usually leaves EDI entirely, going out by portal or
+mail with attachments the 837 handles poorly, and the determination returns as
+correspondence.
+
+The asymmetry is what forces the design. An **overturned** appeal moves money and generally
+surfaces on a later remittance. An **upheld** appeal moves nothing and may produce no 835 at
+all. A log fed only from remittance data would therefore see its wins and miss its losses,
+and every rate computed from it would read high.
+
+So `result` is not a binary. It is `pending → presumed_upheld → confirmed_*`, where
+`presumed_upheld` is what a timeout produces after `PRESUMED_UPHELD_AFTER_DAYS` (60) and
+stays correctable — payers reprocess late, and a biller can get a determination by phone.
+Only the confirmed states are terminal. `outcome_source` records how each determination was
+learned (`remittance_835`, `biller_confirmation`, `timeout_inference`), and
+observed-versus-inferred is derived from it rather than stored beside it, so the two cannot
+disagree.
+
+`overturn_rate` is `null` rather than `0` when nothing has resolved. A payer nobody has
+heard back from has an unknown rate, and reporting that as zero is the most damaging
+available misreading of an empty sample.
+
+The records are denormalized — payer, category, CARC and documentation strength are copied
+onto each one — so aggregation never joins back to a claim. The claims in the PMS feed are
+the live queue and are unresolved by definition; history describes earlier claims that have
+left the working set. `claim_id` and `payer_claim_control_number` are there to match a
+*future* remittance, not to look anything up today.
+
 ## Output surface — what each classification offers the user
 
 | Action | Queue treatment | Detail screen offers | Resolves to |
@@ -113,12 +159,14 @@ not a degraded version of a verdict.
 
 | Piece | Status |
 | --- | --- |
-| Join logic | **Real** — two passes, ambiguity handling, provenance, 19 dev assertions |
+| Join logic | **Real** — two passes, ambiguity handling, provenance, covered by dev assertions |
 | Prioritization and deadline math | **Real** — deterministic, fully inspectable |
 | Payer policy table | **Real but tiny** — four payers, hand-authored, windows from 45 to 180 days |
+| Outcome state machine and aggregation | **Real** — transitions enforced, rates degrade to `null` on an empty sample |
+| Historical outcomes feed | **Mocked** — local TypeScript module, 24 filings across four payers |
 | Denial classification | **Mocked** — fixed `ClassificationResult` per claim. The shape is the real contract; the values would come from a model reading the chart note |
 | Appeal draft generation | **Mocked** — one static narrative. Editing it is real |
-| Both source feeds | **Mocked** — local TypeScript modules, ten claims |
+| Both claim source feeds | **Mocked** — local TypeScript modules, ten claims |
 
 ## What never happens
 

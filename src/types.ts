@@ -132,6 +132,65 @@ export interface RankedClaim {
 }
 
 /**
+ * What the payer did after the practice filed — the feed a payer track record will
+ * eventually be computed from.
+ *
+ * `presumed_upheld` is the state a timeout produces and is deliberately not terminal:
+ * payers reprocess late, and a biller can confirm an outcome by phone at any point. A
+ * presumed record that could never be corrected would just be a wrong record.
+ */
+export type OutcomeResult =
+  | 'pending'
+  | 'presumed_upheld'
+  | 'confirmed_overturned'
+  | 'confirmed_upheld'
+
+/**
+ * How the outcome became known. Carries more than an observed/inferred boolean would:
+ * a determination read off an 835 and one a biller reported by phone are both observed,
+ * but not equally reliable, and a later ranking term may want to weigh them differently.
+ * Observed-vs-inferred is derived from this rather than stored alongside it, so the two
+ * can never disagree.
+ */
+export type OutcomeSource = 'remittance_835' | 'biller_confirmation' | 'timeout_inference'
+
+/**
+ * One filing and what became of it.
+ *
+ * Deliberately denormalized: payer, category, CARC and documentation strength are copied
+ * onto the record so aggregation never has to reach back to a claim. The claims in the
+ * PMS feed are the live queue and are unresolved by definition, so history describes
+ * earlier claims that are not in that feed at all — `claim_id` and
+ * `payer_claim_control_number` exist to match a *future* remittance, not to look
+ * anything up today.
+ */
+export interface ClaimOutcomeRecord {
+  claim_id: string
+  /**
+   * The key a later remittance is matched back on — the practice's own `claim_id` never
+   * appears on the payer's 835. Null means the original claim never matched a remittance
+   * at all, so this outcome can only ever be confirmed by a person; it is a real state,
+   * not missing data.
+   */
+  payer_claim_control_number: string | null
+  payer_id: string
+
+  // Copied from the claim as it stood at the moment of the decision. Copied rather than
+  // joined because what matters is what was true when the bet was placed.
+  category: ClaimCategory
+  carc_code: string
+  documentation_match: DocumentationMatch
+  action_taken: ClaimAction
+
+  result: OutcomeResult
+  /** Null exactly while pending. */
+  outcome_source: OutcomeSource | null
+  action_date: string
+  /** Null exactly while pending. For a presumed outcome this is the inference date. */
+  outcome_date: string | null
+}
+
+/**
  * How a claim was resolved by an explicit user action this session. In-memory only —
  * a reload puts the demo back to its starting state, by design.
  *

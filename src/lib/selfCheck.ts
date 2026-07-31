@@ -14,6 +14,7 @@ import {
   presumptionIsRipe,
   summarize,
 } from './outcomes'
+import { payerTrackRecord } from './payerTrackRecord'
 
 /**
  * Dev-only assertions covering the two pieces of logic the demo actually rests on:
@@ -309,6 +310,89 @@ export function runSelfCheck(): void {
       unknownPayer.overturn_rate === null &&
       !Number.isNaN(unknownPayer.overturn_rate as unknown as number),
     `rate ${unknownPayer.overturn_rate}`,
+  )
+
+  // ── Payer track record: shrinkage ─────────────────────────────────────────
+  // The failure this exists to prevent: Delta's CARC 252 history is two filings, both
+  // overturned, which arithmetic renders as certainty.
+  const deltaAll = payerTrackRecord(mockOutcomes, { payer_id: 'PAYER-DELTA-01' })
+  const delta252 = payerTrackRecord(mockOutcomes, {
+    payer_id: 'PAYER-DELTA-01',
+    carc_code: '252',
+  })
+  check(
+    'a two-record slice is pulled toward its parent, not reported as certainty',
+    delta252.raw_rate === 1 && delta252.estimate < 0.8 && delta252.estimate > deltaAll.estimate,
+    `raw ${delta252.raw_rate}, estimate ${delta252.estimate.toFixed(2)}, ` +
+      `parent ${deltaAll.estimate.toFixed(2)}`,
+  )
+
+  const delta16 = payerTrackRecord(mockOutcomes, { payer_id: 'PAYER-DELTA-01', carc_code: '16' })
+  check(
+    'the thinner the slice, the harder it is pulled',
+    delta16.raw_rate === 1 &&
+      delta252.raw_rate === 1 &&
+      delta16.estimate < delta252.estimate &&
+      delta16.evidence_weight < delta252.evidence_weight,
+    `1 record → ${delta16.estimate.toFixed(2)} (w=${delta16.evidence_weight.toFixed(2)}), ` +
+      `2 records → ${delta252.estimate.toFixed(2)} (w=${delta252.evidence_weight.toFixed(2)})`,
+  )
+
+  const delta50 = payerTrackRecord(mockOutcomes, { payer_id: 'PAYER-DELTA-01', carc_code: '50' })
+  check(
+    'a low raw rate on a thin slice is pulled up, not taken at face value',
+    delta50.raw_rate !== null &&
+      delta50.estimate > delta50.raw_rate &&
+      delta50.estimate < deltaAll.estimate,
+    `raw ${(delta50.raw_rate! * 100).toFixed(0)}% → estimate ${(delta50.estimate * 100).toFixed(0)}%`,
+  )
+
+  // ── Payer track record: the empty sample ──────────────────────────────────
+  const northstarTr = payerTrackRecord(mockOutcomes, { payer_id: 'PAYER-NORTHSTAR-04' })
+  const unknownPayerTr = payerTrackRecord(mockOutcomes, { payer_id: 'PAYER-DOES-NOT-EXIST' })
+  check(
+    'a payer with no determinations inherits an estimate and says so',
+    northstarTr.raw_rate === null &&
+      northstarTr.evidence_weight === 0 &&
+      northstarTr.basis === 'global' &&
+      Number.isFinite(northstarTr.estimate),
+    `estimate ${northstarTr.estimate.toFixed(2)} on zero evidence, basis ${northstarTr.basis}`,
+  )
+  check(
+    'a payer nobody has ever filed against degrades to the same inherited estimate',
+    unknownPayerTr.estimate === northstarTr.estimate && unknownPayerTr.evidence_weight === 0,
+    `${unknownPayerTr.estimate.toFixed(2)} vs ${northstarTr.estimate.toFixed(2)}`,
+  )
+
+  // ── Payer track record: presumptions are worth less ───────────────────────
+  // Same records, with Delta's two timeout presumptions promoted to observed losses.
+  // Believing them fully should make Delta look worse, not the same.
+  const presumptionsHardened = mockOutcomes.map((o) =>
+    o.result === 'presumed_upheld'
+      ? { ...o, result: 'confirmed_upheld' as const, outcome_source: 'biller_confirmation' as const }
+      : o,
+  )
+  const deltaHardened = payerTrackRecord(presumptionsHardened, { payer_id: 'PAYER-DELTA-01' })
+  check(
+    'a determination inferred from silence weighs less than one that was observed',
+    deltaHardened.estimate < deltaAll.estimate,
+    `presumed ${deltaAll.estimate.toFixed(3)} → hardened ${deltaHardened.estimate.toFixed(3)}`,
+  )
+
+  // ── Payer track record: shrinkage does not scramble real signal ───────────
+  const meridian = payerTrackRecord(mockOutcomes, { payer_id: 'PAYER-MERIDIAN-02' })
+  check(
+    'a payer that mostly wins still outranks one that mostly loses on the same reason',
+    meridian.estimate > delta50.estimate,
+    `Meridian ${(meridian.estimate * 100).toFixed(0)}% vs Delta CARC 50 ` +
+      `${(delta50.estimate * 100).toFixed(0)}%`,
+  )
+
+  const everySlice = [deltaAll, delta50, delta252, delta16, meridian, northstarTr, unknownPayerTr]
+  check(
+    'every estimate is a usable probability',
+    everySlice.every((t) => Number.isFinite(t.estimate) && t.estimate > 0 && t.estimate < 1),
+    everySlice.map((t) => t.estimate.toFixed(2)).join(', '),
   )
 
   // ── Report ────────────────────────────────────────────────────────────────

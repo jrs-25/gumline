@@ -1,6 +1,7 @@
 import type {
   ClaimCategory,
   ClaimOutcomeRecord,
+  DocumentationMatch,
   OutcomeResult,
 } from '../types'
 import { daysBetween } from './dates'
@@ -122,4 +123,16 @@ export function byCategory(
 
 export function byCarc(records: ClaimOutcomeRecord[], carcCode: string): ClaimOutcomeRecord[] {
   return records.filter((r) => r.carc_code === carcCode)
+}
+
+/**
+ * Note that `null` is a real value here — administrative corrections have no
+ * documentation dimension — so this narrows *to* null rather than treating it as
+ * "match anything". Callers that mean "don't narrow on this" should not call.
+ */
+export function byDocumentationMatch(
+  records: ClaimOutcomeRecord[],
+  match: DocumentationMatch,
+): ClaimOutcomeRecord[] {
+  return records.filter((r) => r.documentation_match === match)
 }

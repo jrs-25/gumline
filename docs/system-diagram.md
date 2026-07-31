@@ -25,6 +25,7 @@ flowchart TD
 
     OUT["<b>Feed 3 · historical outcomes</b><br/>ClaimOutcomeRecord[]<br/>what the payer did after<br/>the practice filed"]
     SUM["<b>summarize()</b><br/>overturned / resolved<br/>null when nothing has<br/>come back yet"]
+    TRACK["<b>payerTrackRecord()</b><br/>global → payer → +reason → +documentation<br/>each level shrunk toward the one above<br/>+ evidence_weight, basis"]
 
     PRIO["<b>prioritize()</b><br/>1 · deadline override, hard<br/>2 · billed × documentation strength"]
 
@@ -50,12 +51,19 @@ flowchart TD
     STATE --> QUEUE
 
     OUT --> SUM
-    SUM -.->|not yet wired| PRIO
+    OUT --> TRACK
+    TRACK -.->|not yet wired| PRIO
 ```
 
-The dashed edge is the point: the outcomes feed exists and aggregates, but nothing it
-produces reaches the ranking yet. Adding a payer track record term to `prioritize()` is
-separate work, and the feed had to land first for there to be anything to learn from.
+The dashed edge is the point: the outcomes feed exists, aggregates, and produces a
+defensible per-payer estimate, but nothing it produces reaches the ranking yet. Adding a
+track record term to `prioritize()` is separate work.
+
+Note that `payerTrackRecord()` reads the feed directly rather than going through
+`summarize()`. They answer different questions: `summarize()` reports what was observed,
+which is what a user should be shown, and `payerTrackRecord()` reports what should be
+believed, which is what a ranking should act on. Conflating them would put a shrunk
+estimate in front of a biller as though it were a count.
 
 ## Stage by stage
 
@@ -142,6 +150,49 @@ the live queue and are unresolved by definition; history describes earlier claim
 left the working set. `claim_id` and `payer_claim_control_number` are there to match a
 *future* remittance, not to look anything up today.
 
+### `payerTrackRecord(outcomes, query)`
+
+| | |
+| --- | --- |
+| **In** | `ClaimOutcomeRecord[]` and a query — payer, optionally denial reason, optionally documentation strength |
+| **Out** | Raw counts, a shrunk `estimate`, `evidence_weight`, and the `basis` level the estimate rests on |
+
+The interesting slices are tiny. Narrowing by payer, then denial reason, then documentation
+strength multiplies the number of buckets while dividing the same records among them, so
+the most specific question — "how does this payer treat weakly-documented medical-necessity
+denials?" — is exactly the one with two records behind it. Delta's CARC 252 history is two
+filings, both overturned, which arithmetic renders as 100% and honesty renders as
+"we have barely looked."
+
+So an estimate is never taken from its own slice alone. The chain runs
+`global → payer → payer + reason → payer + reason + documentation`, each level starting
+from what the level above concluded and moving toward its own records in proportion to how
+many it has. `PRIOR_STRENGTH` (5) sets the exchange rate: at five determinations a slice
+sits halfway between what it inherited and what it observed.
+
+| Slice | Raw | Estimate |
+| --- | --- | --- |
+| Delta, all reasons | 44% (4 of 9) | 54% |
+| Delta · CARC 50 | 17% (1 of 6) | 37% |
+| Delta · CARC 252 | 100% (2 of 2) | 67% |
+| Delta · CARC 16 | 100% (1 of 1) | 61% |
+| Northstar | — (0 resolved) | 59%, `evidence_weight` 0 |
+
+Both 100% rows are the point, and so is the gap between them: one record is pulled harder
+than two. `evidence_weight` reports how much of an estimate rests on the slice's own
+history, so a number inherited wholesale from the global rate cannot pass itself off as a
+finding about this payer.
+
+Determinations inferred from a timeout count at `INFERRED_WEIGHT` (0.5) against observed
+ones. A `presumed_upheld` is real signal — the payer has not paid in sixty days — but it is
+not a determination, and counting it fully would let the passage of time manufacture
+evidence.
+
+The chain is strictly nested. A `ClaimCategory` level was considered and left out: CARC
+already identifies the denial reason more precisely, and category pools across payers, so
+inserting it would build one payer's prior partly from other payers' claims — right only if
+payer identity carries no information, which is the opposite of the premise here.
+
 ## Output surface — what each classification offers the user
 
 | Action | Queue treatment | Detail screen offers | Resolves to |
@@ -163,6 +214,7 @@ not a degraded version of a verdict.
 | Prioritization and deadline math | **Real** — deterministic, fully inspectable |
 | Payer policy table | **Real but tiny** — four payers, hand-authored, windows from 45 to 180 days |
 | Outcome state machine and aggregation | **Real** — transitions enforced, rates degrade to `null` on an empty sample |
+| Payer track record | **Real** — hierarchical shrinkage, presumptions discounted, evidence weight reported. Not yet consumed by ranking |
 | Historical outcomes feed | **Mocked** — local TypeScript module, 24 filings across four payers |
 | Denial classification | **Mocked** — fixed `ClassificationResult` per claim. The shape is the real contract; the values would come from a model reading the chart note |
 | Appeal draft generation | **Mocked** — one static narrative. Editing it is real |

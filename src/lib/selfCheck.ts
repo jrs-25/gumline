@@ -1,9 +1,19 @@
 import type { Era835Record, PmsRecord } from '../types'
 import { mockPmsRecords } from '../data/mockPmsRecords'
 import { mock835Records } from '../data/mock835Records'
+import { mockOutcomes } from '../data/mockOutcomes'
 import { joinFeeds } from './joinFeeds'
 import { prioritize } from './prioritize'
 import { DEADLINE_OVERRIDE_DAYS, DEMO_TODAY } from './dates'
+import {
+  byCarc,
+  byPayer,
+  canTransition,
+  isInferred,
+  outcomeIsConsistent,
+  presumptionIsRipe,
+  summarize,
+} from './outcomes'
 
 /**
  * Dev-only assertions covering the two pieces of logic the demo actually rests on:
@@ -220,6 +230,85 @@ export function runSelfCheck(): void {
     'no claim surfaces a bare numeric score',
     ranked.every((c) => c.rationale.length > 0 && !/^\d+(\.\d+)?$/.test(c.rationale)),
     'every row explains itself in words',
+  )
+
+  // ── Outcomes: records agree with themselves ───────────────────────────────
+  const inconsistent = mockOutcomes.filter((o) => !outcomeIsConsistent(o))
+  check(
+    'every outcome record is internally consistent',
+    inconsistent.length === 0,
+    inconsistent.map((o) => `${o.claim_id}:${o.result}/${o.outcome_source}`).join(', ') ||
+      'pending ⇔ no source and no date; presumptions only from timeouts',
+  )
+
+  const outcomeIds = mockOutcomes.map((o) => o.claim_id)
+  check(
+    'outcome claim ids are well-formed and unique',
+    new Set(outcomeIds).size === outcomeIds.length && outcomeIds.every((id) => /^CLM-\d+$/.test(id)),
+    `${new Set(outcomeIds).size} distinct of ${outcomeIds.length}`,
+  )
+
+  // The denormalisation decision, made checkable: history describes claims that have
+  // left the working set, so aggregation can never depend on joining back to one.
+  const liveIds = new Set(joined.map((r) => r.claim_id))
+  check(
+    'history is disjoint from the live queue, so aggregation never joins back',
+    outcomeIds.every((id) => !liveIds.has(id)),
+    outcomeIds.filter((id) => liveIds.has(id)).join(', ') || 'no overlap',
+  )
+
+  const presumed = mockOutcomes.filter((o) => o.result === 'presumed_upheld')
+  check(
+    'every presumption waited out the full inference window',
+    presumed.length > 0 && presumed.every(presumptionIsRipe),
+    `${presumed.length} presumed, ${presumed.filter(presumptionIsRipe).length} ripe`,
+  )
+
+  // ── Outcomes: the state machine ───────────────────────────────────────────
+  check(
+    'a presumption stays correctable and a confirmation does not',
+    canTransition('presumed_upheld', 'confirmed_overturned') &&
+      canTransition('presumed_upheld', 'confirmed_upheld') &&
+      !canTransition('confirmed_upheld', 'confirmed_overturned') &&
+      !canTransition('presumed_upheld', 'pending'),
+    'presumed → confirmed allowed; confirmed terminal; nothing returns to pending',
+  )
+
+  // ── Outcomes: aggregation ─────────────────────────────────────────────────
+  const delta = byPayer(mockOutcomes, 'PAYER-DELTA-01')
+  const deltaSummary = summarize(delta)
+  check(
+    'inferred outcomes are counted apart from observed ones',
+    deltaSummary.inferred === delta.filter(isInferred).length && deltaSummary.inferred === 2,
+    `${deltaSummary.inferred} of ${deltaSummary.resolved} Delta determinations inferred`,
+  )
+
+  // The reason a payer-level rate is not enough on its own: Delta wins most of what it
+  // is asked, and loses almost everything on medical necessity.
+  const deltaCarc50 = summarize(byCarc(delta, '50'))
+  check(
+    'the payer × denial-reason slice is weaker than the payer alone',
+    deltaCarc50.overturn_rate !== null &&
+      deltaSummary.overturn_rate !== null &&
+      deltaCarc50.overturn_rate < deltaSummary.overturn_rate,
+    `Delta overall ${deltaSummary.overturned}/${deltaSummary.resolved}, ` +
+      `CARC 50 ${deltaCarc50.overturned}/${deltaCarc50.resolved}`,
+  )
+
+  const northstar = summarize(byPayer(mockOutcomes, 'PAYER-NORTHSTAR-04'))
+  check(
+    'a payer with filings but no determinations reports an unknown rate, not zero',
+    northstar.total > 0 && northstar.resolved === 0 && northstar.overturn_rate === null,
+    `${northstar.total} filed, ${northstar.pending} pending, rate ${northstar.overturn_rate}`,
+  )
+
+  const unknownPayer = summarize(byPayer(mockOutcomes, 'PAYER-DOES-NOT-EXIST'))
+  check(
+    'a payer with no history at all divides by nothing',
+    unknownPayer.total === 0 &&
+      unknownPayer.overturn_rate === null &&
+      !Number.isNaN(unknownPayer.overturn_rate as unknown as number),
+    `rate ${unknownPayer.overturn_rate}`,
   )
 
   // ── Report ────────────────────────────────────────────────────────────────
